@@ -1,0 +1,8 @@
+[build]
+cmd = "go build -o tmp/app.exe main.go"
+bin = "tmp/app.exe"
+
+include_ext = ["go"]
+exclude_dir = ["tmp", "vendor", "node_modules"]
+
+delay = 500
