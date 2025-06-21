@@ -17,7 +17,7 @@ func main() {
 	}
 	defer log.Close()
 
-	// global.DB = initialize.InitDB()
+	global.DB = initialize.InitDB()
 	// global.Redis = initialize.InitRedis()
 
 	r := routes.InitRouter()

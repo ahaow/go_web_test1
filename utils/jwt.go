@@ -6,8 +6,8 @@ import (
 	"errors"
 	"os"
 
-	"github.com/golang-jwt/jwt/v4" // JWT 库
-	"golang.org/x/crypto/bcrypt"   // bcrypt 库（对密码进行Hash）
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt" // bcrypt 库（对密码进行Hash）
 )
 
 // Secret 从环境变量中获取 JWT 的签名密钥
@@ -66,30 +66,21 @@ func GenerateJWT(username string) (string, error) {
 // ParseJWT 函数用来验证 JWT 的合法性，并解析其中的数据（Claims）
 // 一般是在需要认证时使用，如中间件中验证每一个API的Authorization头
 func ParseJWT(signed string) (*CustomClaims, error) {
-	// 一般Authorization中携带时，会有 "Bearer " 前缀，需要移除
 	if len(signed) > 7 && signed[:7] == "Bearer " {
-		signed = signed[7:] // Strip "Bearer "
+		signed = signed[7:]
 	}
 
-	// 解析时需要提供一个函数，返回签名时所用的Secret
-	// 这可以防止别人自己签一个令牌
-	token, err := jwt.ParseWithClaims(signed, &CustomClaims{}, func(t *jwt.Token) (interface{}, error) {
-		// 检查签名方式是不是我们预期的 HMAC-SHA256
-		if t.Method != jwt.SigningMethodHS256 {
-			return nil, errors.New("unsupported signing method")
-		}
+	claims := &CustomClaims{}
+
+	token, err := jwt.ParseWithClaims(signed, claims, func(token *jwt.Token) (interface{}, error) {
 		return Secret, nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}))
+
 	if err != nil {
 		return nil, err
 	}
-
-	// 检查Claims是不是我们定义的CustomClaims，以及Token是不是Valid
-	claims, ok := token.Claims.(*CustomClaims)
-	if !ok || !token.Valid {
+	if !token.Valid {
 		return nil, errors.New("invalid token")
 	}
-
-	// 一切正常，返回Claims
 	return claims, nil
 }
