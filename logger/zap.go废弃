@@ -1,0 +1,137 @@
+package logger
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/buffer"
+	"go.uber.org/zap/zapcore"
+)
+
+// logEncoder 时间分片和级别分片
+type logEncoder struct {
+	zapcore.Encoder
+	errFile     *os.File
+	file        *os.File
+	currentDate string
+}
+
+const (
+	BlueColor   = "\033[34m"
+	YellowColor = "\033[33m"
+	RedColor    = "\033[31m"
+	ResetColor  = "\033[0m"
+)
+
+func myEncodeLevel(level zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+	switch level {
+	case zapcore.InfoLevel:
+		enc.AppendString(BlueColor + "INFO" + ResetColor)
+	case zapcore.WarnLevel:
+		enc.AppendString(YellowColor + "WARN" + ResetColor)
+	case zapcore.ErrorLevel, zapcore.DPanicLevel, zapcore.PanicLevel, zapcore.FatalLevel:
+		enc.AppendString(RedColor + "ERROR" + ResetColor)
+	default:
+		enc.AppendString(level.String())
+	}
+}
+
+func (e *logEncoder) openLogFiles(date string) error {
+	// 创建日志目录
+	logDir := fmt.Sprintf("logs/%s", date)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	// 打开普通日志文件
+	outFilePath := filepath.Join(logDir, "out.log")
+	file, err := os.OpenFile(outFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open out.log: %w", err)
+	}
+	if e.file != nil {
+		e.file.Close() // 关闭旧文件句柄
+	}
+	e.file = file
+
+	// 打开错误日志文件
+	errFilePath := filepath.Join(logDir, "err.log")
+	errFile, err := os.OpenFile(errFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open err.log: %w", err)
+	}
+	if e.errFile != nil {
+		e.errFile.Close() // 关闭旧错误文件句柄
+	}
+	e.errFile = errFile
+
+	e.currentDate = date
+	return nil
+}
+
+func (e *logEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
+	// 调用原始 EncodeEntry 生成日志行
+	buff, err := e.Encoder.EncodeEntry(entry, fields)
+	if err != nil {
+		return nil, err
+	}
+	data := buff.String()
+	buff.Reset()
+	buff.AppendString("[myApp] " + data)
+
+	// 检查日期并更新文件句柄
+	now := time.Now().Format("2006-01-02")
+	if e.currentDate != now || e.file == nil {
+		if err := e.openLogFiles(now); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to open log files: %v\n", err)
+		}
+	}
+
+	// 写入普通日志文件
+	if e.file != nil {
+		if _, err := e.file.WriteString(buff.String() + "\n"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to write to out.log: %v\n", err)
+		}
+	}
+
+	// 写入错误日志文件（仅对 ERROR 级别）
+	if entry.Level == zapcore.ErrorLevel && e.errFile != nil {
+		if _, err := e.errFile.WriteString(buff.String() + "\n"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to write to err.log: %v\n", err)
+		}
+	}
+
+	return buff, nil
+}
+
+func InitLogger() *zap.Logger {
+	// 使用 zap 的 NewDevelopmentConfig 快速配置
+	cfg := zap.NewDevelopmentConfig()
+	cfg.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05")
+	cfg.EncoderConfig.EncodeLevel = myEncodeLevel
+
+	// 创建自定义 Encoder
+	encoder := &logEncoder{
+		Encoder: zapcore.NewConsoleEncoder(cfg.EncoderConfig),
+	}
+
+	// 初始化文件句柄
+	if err := encoder.openLogFiles(time.Now().Format("2006-01-02")); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize log files: %v\n", err)
+	}
+
+	// 创建 Core
+	core := zapcore.NewCore(
+		encoder,
+		zapcore.AddSync(os.Stdout),
+		zapcore.InfoLevel,
+	)
+
+	// 创建 Logger
+	logger := zap.New(core, zap.AddCaller())
+	zap.ReplaceGlobals(logger)
+	return logger
+}
