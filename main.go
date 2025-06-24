@@ -1,50 +1,44 @@
 package main
 
 import (
-	"fmt"
+	"go_web_test1/config"
+	"go_web_test1/global"
 	"go_web_test1/logger"
-
-	"go.uber.org/zap"
+	"go_web_test1/routes"
 )
 
 func main() {
-	// global.Config = config.InitConfig()
+	// 1. 初始化配置
+	global.Config = config.InitConfig()
+	// fmt.Printf("%+v\n", config.Appconfig)
 
-	// // fmt.Printf("%+v\n", config.Appconfig)
-	// log, err := initialize.InitLogger("production", "./logs/app.log")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer log.Close()
+	if global.Config == nil {
+		panic("配置加载失败")
+	}
 
-	// global.DB = initialize.InitDB()
-	// // global.Redis = initialize.InitRedis()
-
-	// r := routes.InitRouter()
-	// port := global.Config.App.Port
-	// if port == "" {
-	// 	port = ":8080"
-	// }
-	// r.Run(port)
-
+	// 2. 初始化日志
 	log, err := logger.NewLogger("development", "logs", "[myApp] ")
 	if err != nil {
 		panic(err)
 	}
+	global.Log = log
+
 	defer log.Close() // 确保程序结束时同步日志
 
-	// 基本日志记录
-	log.Debug("this is debug") // 仅开发环境可见
-	log.Info("this is info")
-	log.Warn("this is warning")
-	log.Error("this is error")
+	global.Log.Info("配置与日志初始化完成")
 
-	// 带字段的日志
-	// 使用全局 logger
-	zap.S().Infof("%s xxx", "carpe")
+	// 3. 初试化数据库
+	// global.DB = initialize.InitDB()
+	// if global.DB == nil {
+	// 	global.Log.Fatal("数据库初始化失败")
+	// }
+	// global.Redis = initialize.InitRedis()
 
-	// 示例：模拟多条错误日志
-	for i := 1; i <= 3; i++ {
-		log.Error(fmt.Sprintf("error %d", i))
+	r := routes.InitRouter()
+	port := global.Config.App.Port
+	if port == "" {
+		port = ":8080"
 	}
+	r.Run(port)
+
 }
